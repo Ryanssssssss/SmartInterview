@@ -78,6 +78,7 @@ class Settings(BaseSettings):
         key_map = {
             "deepseek": self.deepseek_api_key or self.openai_api_key,  # 兼容旧配置
             "openai": self.openai_api_key,
+            "gemini": self.gemini_api_key,
             "qwen": self.qwen_api_key,
             "zhipu": self.zhipu_api_key,
             "moonshot": self.moonshot_api_key,
