@@ -314,6 +314,8 @@ elif st.session_state.phase == "job_select":
 # ── 阶段3: 模拟面试 ──
 elif st.session_state.phase == "interview":
     import streamlit.components.v1 as components
+    from core.leetcode_manager import get_problem_by_id
+    from core.code_runner import verify_solution
 
     if interface.is_finished:
         _save_current_session()
@@ -321,85 +323,160 @@ elif st.session_state.phase == "interview":
         st.session_state.phase = "report"
         st.rerun()
 
-    # 提取最新消息和历史
-    latest_interviewer = ""
-    history_msgs = []
-    latest_user = ""
-    for msg in st.session_state.messages:
-        if msg["role"] == "assistant":
-            if latest_interviewer:
-                history_msgs.append({"role": "assistant", "content": latest_interviewer})
-            if latest_user:
-                history_msgs.append({"role": "user", "content": latest_user})
-                latest_user = ""
-            latest_interviewer = msg["content"]
-        else:
-            if latest_user:
-                history_msgs.append({"role": "user", "content": latest_user})
-            latest_user = msg["content"]
-    if latest_user:
-        history_msgs.append({"role": "user", "content": latest_user})
+    # 检测当前是否是算法题（最后一题含 leetcode_id）
+    agent_state = interface.text_interface._agent.state
+    questions = agent_state.get("questions", [])
+    current_idx = agent_state.get("current_question_idx", 0)
+    current_q = questions[current_idx] if current_idx < len(questions) else {}
+    is_coding = bool(current_q.get("leetcode_id"))
 
-    # 摄像头 + 当前问题
-    if st.session_state.voice_mode:
-        col_cam, col_q = st.columns([1, 2])
-        with col_cam:
-            components.html("""
-            <div style="display:flex;justify-content:center;">
-                <video id="webcam" autoplay playsinline muted style="width:100%;max-width:400px;aspect-ratio:4/3;border-radius:12px;border:2px solid #007AFF;background:#000;"></video>
-            </div>
-            <script>
-                const v=document.getElementById('webcam');
-                navigator.mediaDevices.getUserMedia({video:true,audio:false}).then(s=>{v.srcObject=s}).catch(e=>{});
-            </script>
-            """, height=320)
-        with col_q:
+    # ── 算法题代码模式 ──
+    if is_coding and agent_state.get("interview_phase") == "waiting_answer":
+        lc_id = current_q["leetcode_id"]
+        problem = get_problem_by_id(lc_id)
+
+        st.markdown(f"### 💻 算法题：LeetCode {lc_id}. {current_q.get('question', '').split('。')[0].replace('算法题：', '')}")
+
+        if problem and problem.get("description"):
+            col_desc, col_code = st.columns([1, 1])
+
+            with col_desc:
+                st.markdown("#### 📋 题目描述")
+                st.markdown(problem["description"][:3000])
+
+            with col_code:
+                # 代码编辑器（Python3）
+                default_code = problem.get("code_template", "class Solution:\n    pass")
+                if "user_code" not in st.session_state:
+                    st.session_state.user_code = default_code
+
+                user_code = st.text_area(
+                    "Python3 代码",
+                    value=st.session_state.user_code,
+                    height=320,
+                    key="code_editor",
+                    label_visibility="collapsed",
+                )
+                st.session_state.user_code = user_code
+
+                col_run, col_done = st.columns(2)
+
+                with col_run:
+                    if st.button("▶️ 运行样例测试", type="primary", use_container_width=True):
+                        with st.spinner("运行中..."):
+                            result = verify_solution(user_code, problem)
+                            if result["success"]:
+                                st.success(f"✅ 样例通过 {result['passed']}/{result['total']}")
+                            else:
+                                st.error(f"❌ {result['passed']}/{result['total']} 通过")
+                            if result["output"]:
+                                st.code(result["output"], language="text")
+                            if result["error"]:
+                                st.code(result["error"], language="text")
+
+                with col_done:
+                    if st.button("📤 继续面试", use_container_width=True):
+                        answer = f"我的解法：\n```python\n{user_code}\n```"
+                        st.session_state.messages.append({"role": "user", "content": answer})
+                        with st.spinner("面试官评估中..."):
+                            try:
+                                response, audio_out = interface.process_text_input(answer)
+                                st.session_state.messages.append({"role": "assistant", "content": response})
+                                if audio_out:
+                                    st.session_state.pending_audio = audio_out
+                                if "user_code" in st.session_state:
+                                    del st.session_state["user_code"]
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"出错: {e}")
+
+                # LeetCode 链接
+                if problem.get("slug"):
+                    st.markdown(f"💡 样例仅供参考，完整测试请到 [**LeetCode 提交**](https://leetcode.cn/problems/{problem['slug']}/) 验证")
+
+        else:
+            # 没有完整题面，退回口述模式
+            st.warning(f"未找到 LeetCode #{lc_id} 的完整题面，请口述解题思路。")
+            is_coding = False
+
+    # ── 普通面试模式（非算法题 or 口述） ──
+    if not is_coding or agent_state.get("interview_phase") != "waiting_answer":
+        latest_interviewer = ""
+        history_msgs = []
+        latest_user = ""
+        for msg in st.session_state.messages:
+            if msg["role"] == "assistant":
+                if latest_interviewer:
+                    history_msgs.append({"role": "assistant", "content": latest_interviewer})
+                if latest_user:
+                    history_msgs.append({"role": "user", "content": latest_user})
+                    latest_user = ""
+                latest_interviewer = msg["content"]
+            else:
+                if latest_user:
+                    history_msgs.append({"role": "user", "content": latest_user})
+                latest_user = msg["content"]
+        if latest_user:
+            history_msgs.append({"role": "user", "content": latest_user})
+
+        if st.session_state.voice_mode:
+            col_cam, col_q = st.columns([1, 2])
+            with col_cam:
+                components.html("""
+                <div style="display:flex;justify-content:center;">
+                    <video id="webcam" autoplay playsinline muted style="width:100%;max-width:400px;aspect-ratio:4/3;border-radius:12px;border:2px solid #007AFF;background:#000;"></video>
+                </div>
+                <script>
+                    const v=document.getElementById('webcam');
+                    navigator.mediaDevices.getUserMedia({video:true,audio:false}).then(s=>{v.srcObject=s}).catch(e=>{});
+                </script>
+                """, height=320)
+            with col_q:
+                st.markdown("### 🎙️ 面试官提问")
+                st.info(latest_interviewer or "等待提问...")
+        else:
             st.markdown("### 🎙️ 面试官提问")
             st.info(latest_interviewer or "等待提问...")
-    else:
-        st.markdown("### 🎙️ 面试官提问")
-        st.info(latest_interviewer or "等待提问...")
 
-    if history_msgs:
-        with st.expander(f"📜 历史对话（{len(history_msgs)} 条）", expanded=False):
-            for msg in history_msgs:
-                role = "🤖 面试官" if msg["role"] == "assistant" else "👤 候选人"
-                st.markdown(f"**{role}**: {msg['content']}")
-                st.markdown("---")
+        if history_msgs:
+            with st.expander(f"📜 历史对话（{len(history_msgs)} 条）", expanded=False):
+                for msg in history_msgs:
+                    role = "🤖 面试官" if msg["role"] == "assistant" else "👤 候选人"
+                    st.markdown(f"**{role}**: {msg['content']}")
+                    st.markdown("---")
 
-    st.markdown("---")
+        st.markdown("---")
 
-    # 输入区
-    if st.session_state.voice_mode:
-        ik = st.session_state.input_key
-        col_mic, col_text = st.columns([1, 1])
-        with col_mic:
-            st.markdown("#### 🎤 语音回答")
-            audio_input = st.audio_input("录音", key=f"voice_{ik}")
-        with col_text:
-            st.markdown("#### ⌨️ 或文字回答")
-            with st.form(key=f"form_{ik}", clear_on_submit=True):
-                text_answer = st.text_area("输入回答", height=100)
-                submitted = st.form_submit_button("📤 提交")
+        if st.session_state.voice_mode:
+            ik = st.session_state.input_key
+            col_mic, col_text = st.columns([1, 1])
+            with col_mic:
+                st.markdown("#### 🎤 语音回答")
+                audio_input = st.audio_input("录音", key=f"voice_{ik}")
+            with col_text:
+                st.markdown("#### ⌨️ 或文字回答")
+                with st.form(key=f"form_{ik}", clear_on_submit=True):
+                    text_answer = st.text_area("输入回答", height=100)
+                    submitted = st.form_submit_button("📤 提交")
 
-        if submitted and text_answer:
-            st.session_state.messages.append({"role": "user", "content": text_answer})
-            with st.spinner("面试官思考中..."):
-                try:
-                    response, audio_out = interface.process_text_input(text_answer)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                    if audio_out: st.session_state.pending_audio = audio_out
-                    st.session_state.input_key += 1
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"出错: {e}")
+            if submitted and text_answer:
+                st.session_state.messages.append({"role": "user", "content": text_answer})
+                with st.spinner("面试官思考中..."):
+                    try:
+                        response, audio_out = interface.process_text_input(text_answer)
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                        if audio_out: st.session_state.pending_audio = audio_out
+                        st.session_state.input_key += 1
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"出错: {e}")
 
-        if audio_input is not None:
-            pk = f"pv_{ik}"
-            if pk not in st.session_state:
-                audio_bytes = audio_input.read()
-                if audio_bytes:
-                    st.session_state[pk] = True
+            if audio_input is not None:
+                pk = f"pv_{ik}"
+                if pk not in st.session_state:
+                    audio_bytes = audio_input.read()
+                    if audio_bytes:
+                        st.session_state[pk] = True
                     with st.spinner("语音识别中..."):
                         try:
                             user_text, response, audio_out = interface.process_voice_input(audio_bytes)
@@ -410,16 +487,17 @@ elif st.session_state.phase == "interview":
                             st.rerun()
                         except Exception as e:
                             st.error(f"语音出错: {e}")
-    else:
-        if prompt := st.chat_input("输入您的回答..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.spinner("面试官思考中..."):
-                try:
-                    response, _ = interface.process_text_input(prompt)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                except Exception as e:
-                    st.error(f"出错: {e}")
-            st.rerun()
+
+        else:
+            if prompt := st.chat_input("输入您的回答..."):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                with st.spinner("面试官思考中..."):
+                    try:
+                        response, _ = interface.process_text_input(prompt)
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                    except Exception as e:
+                        st.error(f"出错: {e}")
+                st.rerun()
 
 # ── 阶段4: 反馈报告 ──
 elif st.session_state.phase == "report":
