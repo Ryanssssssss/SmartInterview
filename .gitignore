@@ -1,0 +1,27 @@
+# 环境变量（含 API Key，绝不上传）
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# 运行时数据（不含题库）
+data/chroma_db/
+data/uploads/
+data/sessions/
+
+# IDE / 工具
+.streamlit/secrets.toml
+.codebuddy/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.python-version
+scripts/
