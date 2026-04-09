@@ -353,10 +353,25 @@ elif st.session_state.phase == "interview":
                     st.markdown(f"[🔗 在 LeetCode 上查看](https://leetcode.cn/problems/{problem['slug']}/)")
 
             with col_code:
-                st.markdown("#### ✏️ 编写代码")
+                # 语言选择
+                lang_options = ["Python3", "C++", "Java", "Go", "JavaScript", "TypeScript", "Rust", "C"]
+                selected_lang = st.selectbox("编程语言", lang_options, index=0, key="code_lang")
+                lang_slug = selected_lang.lower().replace("c++", "cpp").replace("javascript", "javascript").replace("typescript", "typescript")
 
-                # 代码编辑器
-                default_code = problem.get("code_template", "class Solution:\n    pass")
+                # 代码模板：Python3 有预填，其他语言从 code_templates 取或给空
+                templates = problem.get("code_templates", {})
+                if lang_slug == "python3":
+                    default_code = problem.get("code_template", "class Solution:\n    pass")
+                else:
+                    default_code = templates.get(lang_slug, f"// {selected_lang} - 请参考 LeetCode 原题获取模板")
+
+                # 语言切换时重置代码
+                if "code_lang_prev" not in st.session_state:
+                    st.session_state.code_lang_prev = selected_lang
+                if st.session_state.code_lang_prev != selected_lang:
+                    st.session_state.user_code = default_code
+                    st.session_state.code_lang_prev = selected_lang
+
                 if "user_code" not in st.session_state:
                     st.session_state.user_code = default_code
 
@@ -373,24 +388,28 @@ elif st.session_state.phase == "interview":
 
                 with col_run:
                     if st.button("▶️ 运行样例", type="primary", use_container_width=True):
-                        with st.spinner("运行中..."):
-                            result = verify_solution(user_code, problem)
-                            if result["success"]:
-                                st.success(f"✅ 样例通过 {result['passed']}/{result['total']}")
-                            else:
-                                st.error(f"❌ {result['passed']}/{result['total']} 通过")
-                            if result["output"]:
-                                st.code(result["output"], language="text")
-                            if result["error"]:
-                                st.code(result["error"], language="text")
+                        if lang_slug == "python3":
+                            with st.spinner("运行中..."):
+                                result = verify_solution(user_code, problem)
+                                if result["success"]:
+                                    st.success(f"✅ 样例通过 {result['passed']}/{result['total']}")
+                                else:
+                                    st.error(f"❌ {result['passed']}/{result['total']} 通过")
+                                if result["output"]:
+                                    st.code(result["output"], language="text")
+                                if result["error"]:
+                                    st.code(result["error"], language="text")
+                        else:
+                            st.info(f"本地运行仅支持 Python3。{selected_lang} 请到 LeetCode 提交验证。")
 
                 with col_done:
                     if st.button("📤 提交并继续", use_container_width=True):
-                        # 先跑一遍样例
-                        test_result = verify_solution(user_code, problem)
-                        test_note = f"样例测试：{test_result['passed']}/{test_result['total']} 通过" if test_result["total"] > 0 else ""
+                        test_note = ""
+                        if lang_slug == "python3":
+                            test_result = verify_solution(user_code, problem)
+                            test_note = f"样例测试：{test_result['passed']}/{test_result['total']} 通过" if test_result["total"] > 0 else ""
 
-                        answer = f"我的解法：\n```python\n{user_code}\n```\n{test_note}"
+                        answer = f"我的解法（{selected_lang}）：\n```{lang_slug}\n{user_code}\n```\n{test_note}"
                         st.session_state.messages.append({"role": "user", "content": answer})
                         with st.spinner("面试官评估中..."):
                             try:
@@ -398,11 +417,13 @@ elif st.session_state.phase == "interview":
                                 st.session_state.messages.append({"role": "assistant", "content": response})
                                 if audio_out:
                                     st.session_state.pending_audio = audio_out
-                                if "user_code" in st.session_state:
-                                    del st.session_state["user_code"]
-                                st.rerun()
                             except Exception as e:
                                 st.error(f"出错: {e}")
+                        # 清除代码编辑状态
+                        for k in ["user_code", "code_lang_prev"]:
+                            if k in st.session_state:
+                                del st.session_state[k]
+                        st.rerun()
 
                 st.caption(f"💡 本地仅跑样例（{len(problem.get('test_cases', []))} 个），完整测试请到 LeetCode 提交")
 
@@ -461,44 +482,46 @@ elif st.session_state.phase == "interview":
 
         if st.session_state.voice_mode:
             ik = st.session_state.input_key
+
+            # 语音 + 文字并排，紧凑布局
             col_mic, col_text = st.columns([1, 1])
             with col_mic:
-                st.markdown("#### 🎤 语音回答")
-                audio_input = st.audio_input("录音", key=f"voice_{ik}")
-            with col_text:
-                st.markdown("#### ⌨️ 或文字回答")
-                with st.form(key=f"form_{ik}", clear_on_submit=True):
-                    text_answer = st.text_area("输入回答", height=100)
-                    submitted = st.form_submit_button("📤 提交")
+                st.markdown("🎤 **语音回答**")
+                audio_input = st.audio_input("录音", key=f"v_{ik}")
 
-            if submitted and text_answer:
-                st.session_state.messages.append({"role": "user", "content": text_answer})
-                with st.spinner("面试官思考中..."):
-                    try:
-                        response, audio_out = interface.process_text_input(text_answer)
-                        st.session_state.messages.append({"role": "assistant", "content": response})
-                        if audio_out: st.session_state.pending_audio = audio_out
+            with col_text:
+                st.markdown("⌨️ **或文字回答**")
+                text_answer = st.text_input("输入回答", key=f"t_{ik}", placeholder="在这里输入...")
+                if st.button("提交", key=f"b_{ik}", type="primary", use_container_width=True):
+                    if text_answer:
+                        st.session_state.messages.append({"role": "user", "content": text_answer})
+                        with st.spinner("面试官思考中..."):
+                            try:
+                                response, audio_out = interface.process_text_input(text_answer)
+                                st.session_state.messages.append({"role": "assistant", "content": response})
+                                if audio_out: st.session_state.pending_audio = audio_out
+                            except Exception as e:
+                                st.error(f"出错: {e}")
                         st.session_state.input_key += 1
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"出错: {e}")
 
+            # 语音处理
             if audio_input is not None:
                 pk = f"pv_{ik}"
                 if pk not in st.session_state:
                     audio_bytes = audio_input.read()
                     if audio_bytes:
                         st.session_state[pk] = True
-                    with st.spinner("语音识别中..."):
-                        try:
-                            user_text, response, audio_out = interface.process_voice_input(audio_bytes)
-                            if user_text: st.session_state.messages.append({"role": "user", "content": f"🎤 {user_text}"})
-                            st.session_state.messages.append({"role": "assistant", "content": response})
-                            if audio_out: st.session_state.pending_audio = audio_out
-                            st.session_state.input_key += 1
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"语音出错: {e}")
+                        with st.spinner("语音识别中..."):
+                            try:
+                                user_text, response, audio_out = interface.process_voice_input(audio_bytes)
+                                if user_text: st.session_state.messages.append({"role": "user", "content": f"🎤 {user_text}"})
+                                st.session_state.messages.append({"role": "assistant", "content": response})
+                                if audio_out: st.session_state.pending_audio = audio_out
+                            except Exception as e:
+                                st.error(f"语音出错: {e}")
+                        st.session_state.input_key += 1
+                        st.rerun()
 
         else:
             if prompt := st.chat_input("输入您的回答..."):
