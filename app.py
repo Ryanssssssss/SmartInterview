@@ -52,14 +52,22 @@ st.markdown("""
     .voice-on { background: #E8F5E9; color: #2E7D32; }
     .voice-off { background: #F3F4F6; color: #6B7280; }
     .session-card { padding: 8px 12px; border: 1px solid #E5E5EA; border-radius: 8px; margin: 4px 0; font-size: 0.85em; }
+    [data-stale="true"] { opacity: 1 !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
 def play_audio(audio_bytes: bytes):
     if audio_bytes:
+        speed = st.session_state.get("voice_speed", 1.25)
         b64_audio = base64.b64encode(audio_bytes).decode()
-        st.markdown(f'<audio autoplay><source src="data:audio/wav;base64,{b64_audio}" type="audio/wav"></audio>', unsafe_allow_html=True)
+        st.markdown(
+            f'<audio id="tts_audio" autoplay>'
+            f'<source src="data:audio/wav;base64,{b64_audio}" type="audio/wav">'
+            f'</audio>'
+            f'<script>document.getElementById("tts_audio").playbackRate={speed};</script>',
+            unsafe_allow_html=True,
+        )
 
 
 # ── Session State ──

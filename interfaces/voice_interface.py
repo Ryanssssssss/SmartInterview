@@ -28,7 +28,7 @@ class QwenTTS:
     def __init__(self, voice: str | None = None):
         self._voice = voice or settings.voice_name
 
-    def synthesize(self, text: str, speed: float = 1.25) -> bytes:
+    def synthesize(self, text: str, **kwargs) -> bytes:
         """将文本合成为 PCM 音频，返回 WAV 字节。
 
         Args:
@@ -102,9 +102,8 @@ class QwenTTS:
             tts.update_session(
                 voice=self._voice,
                 response_format=AudioFormat.PCM_24000HZ_MONO_16BIT,
-                instructions="语速较快，语气专业干练，像资深面试官一样沉稳有力。",
+                instructions="语气专业干练，像资深面试官一样沉稳有力。",
                 optimize_instructions=True,
-                speed=speed,
                 mode="server_commit",
             )
 
@@ -269,19 +268,19 @@ class VoiceInterviewInterface:
     def start_interview(self, resume_file: str, session_id: str = "default") -> tuple[str, bytes]:
         """开始面试，返回 (文本, 音频)。"""
         text = self._text_interface.start_interview(resume_file, session_id)
-        audio = self._tts.synthesize(text, speed=self._get_speed()) if self._tts else b""
+        audio = self._tts.synthesize(text) if self._tts else b""
         return text, audio
 
     def select_job(self, job_category: str, include_coding: bool = True) -> tuple[str, bytes]:
         """选择岗位，返回 (文本, 音频)。"""
         text = self._text_interface.select_job(job_category, include_coding=include_coding)
-        audio = self._tts.synthesize(text, speed=self._get_speed()) if self._tts else b""
+        audio = self._tts.synthesize(text) if self._tts else b""
         return text, audio
 
     def process_text_input(self, text: str) -> tuple[str, bytes]:
         """处理文本输入，返回 (面试官文本, 音频)。"""
         response = self._text_interface.send_message(text)
-        audio = self._tts.synthesize(response, speed=self._get_speed()) if self._tts else b""
+        audio = self._tts.synthesize(response) if self._tts else b""
         return response, audio
 
     def process_voice_input(self, audio_bytes: bytes) -> tuple[str, str, bytes]:
@@ -294,7 +293,7 @@ class VoiceInterviewInterface:
             return "", "没听清，请再说一次。", b""
 
         response = self._text_interface.send_message(user_text)
-        audio = self._tts.synthesize(response, speed=self._get_speed())
+        audio = self._tts.synthesize(response)
         audio = self._tts.synthesize(response)
 
         return user_text, response, audio

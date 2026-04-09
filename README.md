@@ -144,7 +144,7 @@ SmartInterview/
 | LLM | LangChain + OpenAI 兼容（多 Provider 统一接口） |
 | 简历解析 | pdfplumber + LLM 结构化 |
 | RAG | sentence-transformers（`BAAI/bge-small-zh-v1.5`）+ 本地真题库 |
-| TTS | DashScope（qwen3-tts-instruct-flash-realtime） |
+| TTS | [DashScope Qwen-TTS Realtime](https://help.aliyun.com/zh/model-studio/qwen-tts-realtime)（qwen3-tts-instruct-flash-realtime） |
 | STT | DashScope（qwen3-omni-flash） |
 | 代码验证 | Python subprocess 沙箱 |
 
