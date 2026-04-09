@@ -346,14 +346,7 @@ elif st.session_state.phase == "interview":
 
             with col_desc:
                 st.markdown("#### 📋 题目描述")
-                # 用 container + 固定高度滚动展示题面
-                desc_html = problem["description"][:4000].replace("\n", "<br>")
-                st.markdown(
-                    f'<div style="max-height:500px;overflow-y:auto;padding:12px;'
-                    f'background:#f8f9fa;border-radius:8px;font-size:14px;line-height:1.6;">'
-                    f'{desc_html}</div>',
-                    unsafe_allow_html=True,
-                )
+                st.markdown(problem["description"][:4000], unsafe_allow_html=True)
                 if problem.get("slug"):
                     st.markdown(f"[🔗 在 LeetCode 上查看](https://leetcode.cn/problems/{problem['slug']}/)")
 
