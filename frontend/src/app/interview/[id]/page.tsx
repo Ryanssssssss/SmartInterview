@@ -93,12 +93,13 @@ export default function InterviewPage() {
     }
   }, [currentQuestion]);
 
-  // Attach camera stream to video element when it renders
-  useEffect(() => {
-    if (videoRef.current && cameraStreamRef.current) {
-      videoRef.current.srcObject = cameraStreamRef.current;
+  // Attach camera stream to video element (only when stream changes)
+  const attachCamera = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    if (el && cameraStreamRef.current && el.srcObject !== cameraStreamRef.current) {
+      el.srcObject = cameraStreamRef.current;
     }
-  });
+  }, []);
 
   // Release camera on unmount or when interview finishes
   useEffect(() => {
@@ -375,41 +376,55 @@ export default function InterviewPage() {
 
         {/* Chat Mode (no coding question) */}
         {phase === "interview" && !isCoding && (
-          <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="relative flex flex-1 flex-col overflow-hidden">
+            {/* Camera preview — fixed top-right, picture-in-picture style */}
+            {interviewMode === "voice" && cameraStreamRef.current && (
+              <div className="absolute right-4 top-4 z-10">
+                <video
+                  ref={attachCamera}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="h-32 w-44 rounded-2xl border border-white/20 bg-black object-cover shadow-2xl ring-1 ring-black/5"
+                />
+              </div>
+            )}
+
             <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
               <div className="mx-auto max-w-2xl space-y-4">
-                {/* Camera preview for voice mode */}
-                {interviewMode === "voice" && cameraStreamRef.current && (
-                  <div className="mb-4 flex justify-center">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      muted
-                      playsInline
-                      className="h-40 w-56 rounded-xl border bg-black object-cover shadow-md"
-                    />
-                  </div>
-                )}
-
-                {/* Collapsed history */}
+                {/* Collapsible history */}
                 {messages.length > 2 && (
-                  <button
-                    onClick={() => setHistoryExpanded(!historyExpanded)}
-                    className="flex w-full items-center justify-center gap-1 rounded-lg py-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
-                  >
-                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${historyExpanded ? "rotate-180" : ""}`} />
-                    {historyExpanded ? "收起历史消息" : `查看 ${messages.length - 2} 条历史消息`}
-                  </button>
-                )}
-                {historyExpanded &&
-                  messages.slice(0, -2).map((msg, i) => (
-                    <div key={i} className="opacity-50">
-                      <ChatMessage role={msg.role} content={msg.content} />
-                    </div>
-                  ))
-                }
+                  <>
+                    <button
+                      onClick={() => setHistoryExpanded(!historyExpanded)}
+                      className="group flex w-full items-center gap-3 py-1"
+                    >
+                      <div className="h-px flex-1 bg-gradient-to-r from-transparent to-border" />
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground/70 transition-colors group-hover:text-muted-foreground">
+                        <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${historyExpanded ? "rotate-180" : ""}`} />
+                        {historyExpanded ? "收起" : `${messages.length - 2} 条历史`}
+                      </span>
+                      <div className="h-px flex-1 bg-gradient-to-l from-transparent to-border" />
+                    </button>
 
-                {/* Latest round: always visible */}
+                    {historyExpanded && (
+                      <div className="space-y-3">
+                        {messages.slice(0, -2).map((msg, i) => (
+                          <div key={i} className="opacity-40 transition-opacity hover:opacity-70">
+                            <ChatMessage role={msg.role} content={msg.content} />
+                          </div>
+                        ))}
+                        <div className="flex items-center gap-3 py-1">
+                          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-border/50" />
+                          <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">当前</span>
+                          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-border/50" />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Latest round — always visible, full opacity */}
                 {messages.slice(-2).map((msg, i) => (
                   <ChatMessage key={`latest-${i}`} role={msg.role} content={msg.content} />
                 ))}
