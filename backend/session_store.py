@@ -13,11 +13,12 @@ SESSION_TTL = 3600 * 2  # 2 小时无活动过期
 
 
 class _SessionEntry:
-    __slots__ = ("interface", "last_active")
+    __slots__ = ("interface", "last_active", "meta")
 
     def __init__(self, interface: VoiceInterviewInterface):
         self.interface = interface
         self.last_active = time.time()
+        self.meta: dict[str, Any] = {}
 
     def touch(self):
         self.last_active = time.time()
@@ -48,6 +49,19 @@ class SessionStore:
         if iface is None:
             iface = self.create(session_id)
         return iface
+
+    def set_meta(self, session_id: str, key: str, value: Any) -> None:
+        with self._lock:
+            entry = self._sessions.get(session_id)
+            if entry:
+                entry.meta[key] = value
+
+    def get_meta(self, session_id: str, key: str) -> Any:
+        with self._lock:
+            entry = self._sessions.get(session_id)
+            if entry:
+                return entry.meta.get(key)
+            return None
 
     def remove(self, session_id: str) -> None:
         with self._lock:

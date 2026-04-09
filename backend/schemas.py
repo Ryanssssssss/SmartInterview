@@ -54,6 +54,7 @@ class ReportResponse(BaseModel):
 
 class TTSRequest(BaseModel):
     text: str
+    speed: float = 1.25
 
 
 class STTResponse(BaseModel):

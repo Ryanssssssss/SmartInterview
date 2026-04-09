@@ -26,51 +26,88 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["interview"])
 
 
-@router.post("/interview", response_model=StartInterviewResponse)
+@router.post("/interview")
 async def start_interview(file: UploadFile = File(...)):
-    """上传简历 PDF 并创建面试会话。"""
+    """上传简历 PDF，秒回 session_id（不等 LLM 解析）。"""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "请上传 PDF 格式的简历文件")
 
     session_id = str(uuid.uuid4())[:8]
-    iface = store.create(session_id)
+    store.create(session_id)
 
     settings.ensure_dirs()
     save_path = Path(settings.upload_dir) / f"{session_id}_{file.filename}"
     content = await file.read()
     save_path.write_bytes(content)
 
-    try:
-        text, _audio = await asyncio.to_thread(
-            iface.start_interview, str(save_path), session_id
-        )
-    except Exception as e:
-        store.remove(session_id)
-        logger.exception("简历解析失败")
-        raise HTTPException(500, f"简历解析失败: {e}")
+    # 记录文件路径到 session metadata，供后续 parse 使用
+    store.set_meta(session_id, "resume_path", str(save_path))
 
-    return StartInterviewResponse(session_id=session_id, greeting=text)
+    return {"session_id": session_id}
 
 
-@router.post("/interview/{session_id}/select-job", response_model=SelectJobResponse)
-async def select_job(session_id: str, body: SelectJobRequest):
-    """选择目标岗位并生成面试题。"""
+@router.post("/interview/{session_id}/parse")
+async def parse_resume(session_id: str):
+    """解析简历（耗时操作，由面试页调用，SSE 推送进度）。"""
     iface = store.get(session_id)
     if iface is None:
         raise HTTPException(404, "会话不存在")
 
-    try:
-        text, _audio = await asyncio.to_thread(
-            iface.select_job, body.job_category, body.include_coding
-        )
-    except Exception as e:
-        logger.exception("生成面试题失败")
-        raise HTTPException(500, f"生成面试题失败: {e}")
+    resume_path = store.get_meta(session_id, "resume_path")
+    if not resume_path:
+        raise HTTPException(400, "未找到简历文件，请重新上传")
 
-    agent_state = store.get_state(session_id)
-    questions_count = len(agent_state.get("questions", []))
+    async def event_generator():
+        yield {"event": "status", "data": json.dumps({"status": "parsing"})}
+        try:
+            text, _audio = await asyncio.to_thread(
+                iface.start_interview, resume_path, session_id
+            )
+            yield {
+                "event": "done",
+                "data": json.dumps({"greeting": text}, ensure_ascii=False),
+            }
+        except Exception as e:
+            logger.exception("简历解析失败")
+            store.remove(session_id)
+            yield {
+                "event": "error",
+                "data": json.dumps({"message": f"简历解析失败: {e}"}, ensure_ascii=False),
+            }
 
-    return SelectJobResponse(message=text, questions_count=questions_count)
+    return EventSourceResponse(event_generator())
+
+
+@router.post("/interview/{session_id}/select-job")
+async def select_job(session_id: str, body: SelectJobRequest):
+    """选择目标岗位并生成面试题（SSE 流式，避免代理超时）。"""
+    iface = store.get(session_id)
+    if iface is None:
+        raise HTTPException(404, "会话不存在")
+
+    async def event_generator():
+        yield {"event": "status", "data": json.dumps({"status": "generating"})}
+        try:
+            text, _audio = await asyncio.to_thread(
+                iface.select_job, body.job_category, body.include_coding
+            )
+            agent_state = store.get_state(session_id)
+            questions_count = len(agent_state.get("questions", []))
+            yield {
+                "event": "done",
+                "data": json.dumps({
+                    "message": text,
+                    "questions_count": questions_count,
+                }, ensure_ascii=False),
+            }
+        except Exception as e:
+            logger.exception("生成面试题失败")
+            yield {
+                "event": "error",
+                "data": json.dumps({"message": f"生成面试题失败: {e}"}, ensure_ascii=False),
+            }
+
+    return EventSourceResponse(event_generator())
 
 
 @router.post("/interview/{session_id}/answer")
@@ -176,6 +213,27 @@ async def run_code(session_id: str, body: RunCodeRequest):
     return RunCodeResponse(**result)
 
 
+@router.get("/interview/leetcode/{problem_id}")
+async def get_leetcode_problem(problem_id: int):
+    """获取 LeetCode 题目完整信息（题面 / 代码模板 / 样例）。"""
+    from core.leetcode_manager import get_problem_by_id
+
+    problem = get_problem_by_id(problem_id)
+    if not problem:
+        raise HTTPException(404, f"未找到 LeetCode #{problem_id}")
+
+    return {
+        "id": problem["id"],
+        "title": problem.get("title", ""),
+        "difficulty": problem.get("difficulty", ""),
+        "description": problem.get("description", ""),
+        "code_template": problem.get("code_template", "class Solution:\n    pass"),
+        "test_cases": problem.get("test_cases", []),
+        "slug": problem.get("slug", ""),
+        "tags": problem.get("tags", []),
+    }
+
+
 @router.get("/interview/config/job-categories")
 async def get_job_categories():
     """获取可选岗位列表。"""
@@ -184,8 +242,12 @@ async def get_job_categories():
 
 @router.get("/interview/config/providers")
 async def get_providers():
-    """获取可用 LLM Provider 列表。"""
+    """获取可用 LLM Provider 列表及当前配置。"""
     from core.llm.providers import PROVIDERS
+
+    key_attr = f"{settings.llm_provider}_api_key"
+    has_key = bool(getattr(settings, key_attr, ""))
+
     return {
         "providers": [
             {
@@ -196,5 +258,24 @@ async def get_providers():
             }
             for k, v in PROVIDERS.items()
         ],
-        "current": settings.llm_provider,
+        "current_provider": settings.llm_provider,
+        "current_model": settings.llm_model_name or None,
+        "has_api_key": has_key,
+        "has_voice_key": bool(settings.voice_api_key),
     }
+
+
+@router.put("/interview/config")
+async def update_config(body: dict):
+    """运行时更新 LLM / 语音配置。"""
+    if "provider" in body:
+        settings.llm_provider = body["provider"]
+    if "model" in body:
+        settings.llm_model_name = body["model"]
+    if "api_key" in body and body["api_key"]:
+        key_attr = f"{settings.llm_provider}_api_key"
+        setattr(settings, key_attr, body["api_key"])
+    if "voice_api_key" in body and body["voice_api_key"]:
+        settings.voice_api_key = body["voice_api_key"]
+
+    return {"ok": True}
