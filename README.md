@@ -176,20 +176,6 @@ SmartInterview/
 └── .env.example
 ```
 
-## 技术栈
-
-| 模块 | 技术 |
-|------|------|
-| 前端 | Next.js 16 + shadcn/ui + Tailwind CSS + Monaco Editor + react-markdown |
-| 后端 API | FastAPI + SSE (sse-starlette) + uvicorn |
-| Agent | LangGraph (StateGraph 状态机, 手动调度节点) |
-| LLM | LangChain + OpenAI 兼容接口 (多 Provider) |
-| 简历解析 | pdfplumber + LLM 结构化提取 |
-| RAG | sentence-transformers (`BAAI/bge-small-zh-v1.5`) + 本地真题库 |
-| TTS | **阿里云 DashScope Qwen3-TTS** (`qwen3-tts-instruct-flash-realtime`, WebSocket 实时合成) |
-| STT | **阿里云 DashScope Qwen3-Omni** (`qwen3-omni-flash`, OpenAI 兼容接口) |
-| 代码验证 | Python subprocess 沙箱 |
-
 ## License
 
 MIT
