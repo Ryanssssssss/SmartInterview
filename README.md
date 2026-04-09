@@ -8,8 +8,9 @@
 - **智能面试官**：像真人面试官一样追问、过渡、反问，支持跳题
 - **实体级记忆**：每个项目/实习独立追踪，不串项目、不重复提问
 - **多 LLM 支持**：DeepSeek / GPT / Gemini / Qwen / GLM / Kimi / SiliconFlow，一键切换
-- **语音面试**：Qwen3-TTS 语音合成 + Qwen3-Omni 语音识别，可调语速
-- **LeetCode 代码题**：完整题面 + Monaco 代码编辑器（Python3 / C++ / Java / Go / JS / TS / Rust）+ 本地样例测试
+- **语音面试**：基于阿里云 DashScope 的 **Qwen3-TTS** 语音合成 + **Qwen3-Omni** 语音识别，可调语速（0.5x ~ 2.0x）
+- **文本 + 语音双模式**：语音面试模式下仍可随时文本输入，两种方式自由切换
+- **LeetCode 代码题**：完整题面（Markdown 渲染）+ Monaco 代码编辑器 + 本地样例测试 + 对话区可讨论思路
 - **岗位智能过滤**：只对与目标岗位相关的经历出题
 - **面试反馈报告**：多维度评分 + 改进建议 + 维度进度条
 - **多对话管理**：历史面试保存/加载/删除，自动清理过期会话
@@ -54,13 +55,15 @@ cp .env.example .env
 编辑 `.env`，填写所选 Provider 的 API Key：
 
 ```bash
-# 选择 LLM 提供商
+# 选择 LLM 提供商（面试对话用）
 LLM_PROVIDER=deepseek
-
-# 对应的 API Key
 DEEPSEEK_API_KEY=your-key
 
-# 语音功能（可选，需阿里云 DashScope Key）
+# 语音功能（可选）
+# 使用阿里云 DashScope 的 Qwen3 系列语音模型
+# TTS: qwen3-tts-instruct-flash-realtime（语音合成）
+# STT: qwen3-omni-flash（语音识别）
+# 获取 Key: https://dashscope.console.aliyun.com/apiKey
 VOICE_API_KEY=your-dashscope-key
 ```
 
@@ -94,6 +97,21 @@ cd frontend && npm run dev
 | SiliconFlow | DeepSeek-V3 |
 | 自定义 | 任何 OpenAI 兼容 API |
 
+> 所有 Provider 均通过 OpenAI 兼容接口调用，可在界面内"AI 模型配置"中实时切换。
+
+## 语音服务
+
+语音面试功能基于**阿里云 DashScope** 的 **Qwen3** 系列语音模型：
+
+| 功能 | 模型 | 说明 |
+|------|------|------|
+| 语音合成 (TTS) | `qwen3-tts-instruct-flash-realtime` | WebSocket 实时流式合成，支持语速调节 |
+| 语音识别 (STT) | `qwen3-omni-flash` | OpenAI 兼容接口，音频转文字 |
+
+需要在 `.env` 中配置 `VOICE_API_KEY`（DashScope API Key）。未配置时语音功能自动禁用，不影响文本面试。
+
+获取 Key：[dashscope.console.aliyun.com/apiKey](https://dashscope.console.aliyun.com/apiKey)
+
 ## 面试模式
 
 | 模式 | 说明 |
@@ -115,8 +133,8 @@ SmartInterview/
 │       └── sessions.py             # 历史会话 CRUD
 ├── frontend/                       # Next.js 前端
 │   └── src/
-│       ├── app/                    # 页面 (首页/面试/报告/历史)
-│       ├── components/             # 组件 (聊天气泡/代码编辑器/语音/侧边栏)
+│       ├── app/                    # 页面 (首页/面试/报告)
+│       ├── components/             # 组件 (聊天气泡/代码编辑器/语音/侧边栏/设置)
 │       ├── hooks/                  # React Hooks (use-interview/use-voice)
 │       ├── lib/api.ts              # API 客户端 + SSE 解析
 │       └── types/                  # TypeScript 类型定义
@@ -135,16 +153,15 @@ SmartInterview/
 │   │   └── reporter.py             # 面试报告生成
 │   ├── rag/                        # 真题库语义检索
 │   ├── resume/                     # 简历解析 (PDF → 结构化)
-│   ├── data/                       # 内置数据 (真题库 + LeetCode)
+│   ├── data/                       # 内置数据 (真题库 + LeetCode Hot 100)
 │   ├── code_runner.py              # Python 代码沙箱运行
 │   ├── leetcode_manager.py         # LeetCode 题目管理
 │   └── session_manager.py          # 会话持久化 + 自动清理
 ├── interfaces/                     # 交互接口
 │   ├── text_interface.py           # 文本交互
-│   └── voice_interface.py          # 语音交互 (TTS + STT)
+│   └── voice_interface.py          # 语音交互 (Qwen3 TTS + STT)
 ├── config/
 │   └── settings.py                 # pydantic-settings 配置
-├── app.py                          # 旧 Streamlit 入口 (保留参考)
 ├── requirements.txt
 └── .env.example
 ```
@@ -153,14 +170,14 @@ SmartInterview/
 
 | 模块 | 技术 |
 |------|------|
-| 前端 | Next.js 16 + shadcn/ui + Tailwind CSS + Monaco Editor |
+| 前端 | Next.js 16 + shadcn/ui + Tailwind CSS + Monaco Editor + react-markdown |
 | 后端 API | FastAPI + SSE (sse-starlette) + uvicorn |
 | Agent | LangGraph (StateGraph 状态机, 手动调度节点) |
 | LLM | LangChain + OpenAI 兼容接口 (多 Provider) |
 | 简历解析 | pdfplumber + LLM 结构化提取 |
 | RAG | sentence-transformers (`BAAI/bge-small-zh-v1.5`) + 本地真题库 |
-| TTS | DashScope Qwen-TTS Realtime (qwen3-tts-instruct-flash-realtime) |
-| STT | DashScope (qwen3-omni-flash) |
+| TTS | **阿里云 DashScope Qwen3-TTS** (`qwen3-tts-instruct-flash-realtime`, WebSocket 实时合成) |
+| STT | **阿里云 DashScope Qwen3-Omni** (`qwen3-omni-flash`, OpenAI 兼容接口) |
 | 代码验证 | Python subprocess 沙箱 |
 
 ## API 端点
@@ -168,13 +185,17 @@ SmartInterview/
 | Method | Path | 说明 |
 |--------|------|------|
 | POST | `/api/interview` | 上传简历 PDF, 创建会话 |
-| POST | `/api/interview/{id}/select-job` | 选择目标岗位 |
-| POST | `/api/interview/{id}/answer` | 提交回答 (SSE 流式返回) |
+| POST | `/api/interview/{id}/parse` | 解析简历 (SSE 流式) |
+| POST | `/api/interview/{id}/select-job` | 选择目标岗位 (SSE 流式) |
+| POST | `/api/interview/{id}/answer` | 提交回答 (SSE 流式) |
 | GET | `/api/interview/{id}/status` | 获取面试状态 |
 | GET | `/api/interview/{id}/report` | 获取反馈报告 |
+| GET | `/api/interview/leetcode/{id}` | 获取 LeetCode 题目详情 |
 | POST | `/api/interview/{id}/code/run` | 运行代码样例 |
-| POST | `/api/voice/tts` | 文字转语音 |
-| POST | `/api/voice/stt` | 语音转文字 |
+| GET | `/api/interview/config/providers` | 获取 LLM 配置 |
+| PUT | `/api/interview/config` | 更新 LLM 配置 |
+| POST | `/api/voice/tts` | 文字转语音 (Qwen3-TTS) |
+| POST | `/api/voice/stt` | 语音转文字 (Qwen3-Omni) |
 | GET | `/api/sessions` | 历史会话列表 |
 | DELETE | `/api/sessions/{id}` | 删除会话 |
 

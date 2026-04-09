@@ -115,8 +115,11 @@ def main():
                 except:
                     args.append(line)
             result = sol.{method_name}(*args)
-            print(f"测试 {{i+1}}: 输入={{args}} => 输出={{result}}")
-            passed += 1
+            if result is None:
+                print(f"测试 {{i+1}}: 输入={{args}} => 返回 None（未实现）")
+            else:
+                print(f"测试 {{i+1}}: 输入={{args}} => 输出={{result}}")
+                passed += 1
         except Exception as e:
             print(f"测试 {{i+1}}: 错误 - {{e}}")
 
