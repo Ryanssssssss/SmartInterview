@@ -13,6 +13,7 @@
 - **LeetCode 代码题**：完整题面（Markdown 渲染）+ Monaco 代码编辑器 + 本地样例测试 + 对话区可讨论思路
 - **岗位智能过滤**：只对与目标岗位相关的经历出题
 - **面试反馈报告**：多维度评分 + 改进建议 + 维度进度条
+- **简历复用**：已上传的简历可直接复用开启新面试，自动缓存解析结果，跳过 LLM 重复解析
 - **多对话管理**：历史面试保存/加载/删除，自动清理过期会话
 
 ## 架构
@@ -188,25 +189,6 @@ SmartInterview/
 | TTS | **阿里云 DashScope Qwen3-TTS** (`qwen3-tts-instruct-flash-realtime`, WebSocket 实时合成) |
 | STT | **阿里云 DashScope Qwen3-Omni** (`qwen3-omni-flash`, OpenAI 兼容接口) |
 | 代码验证 | Python subprocess 沙箱 |
-
-## API 端点
-
-| Method | Path | 说明 |
-|--------|------|------|
-| POST | `/api/interview` | 上传简历 PDF, 创建会话 |
-| POST | `/api/interview/{id}/parse` | 解析简历 (SSE 流式) |
-| POST | `/api/interview/{id}/select-job` | 选择目标岗位 (SSE 流式) |
-| POST | `/api/interview/{id}/answer` | 提交回答 (SSE 流式) |
-| GET | `/api/interview/{id}/status` | 获取面试状态 |
-| GET | `/api/interview/{id}/report` | 获取反馈报告 |
-| GET | `/api/interview/leetcode/{id}` | 获取 LeetCode 题目详情 |
-| POST | `/api/interview/{id}/code/run` | 运行代码样例 |
-| GET | `/api/interview/config/providers` | 获取 LLM 配置 |
-| PUT | `/api/interview/config` | 更新 LLM 配置 |
-| POST | `/api/voice/tts` | 文字转语音 (Qwen3-TTS) |
-| POST | `/api/voice/stt` | 语音转文字 (Qwen3-Omni) |
-| GET | `/api/sessions` | 历史会话列表 |
-| DELETE | `/api/sessions/{id}` | 删除会话 |
 
 ## License
 
