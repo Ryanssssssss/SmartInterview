@@ -89,21 +89,6 @@ cd frontend && npm run dev
 
 > 前端开发服务器会自动将 `/api/*` 请求代理到后端 `localhost:8000`。
 
-## 支持的 LLM
-
-| Provider | 默认模型 |
-|----------|---------|
-| DeepSeek | deepseek-chat |
-| OpenAI (GPT) | gpt-4o-mini |
-| Google Gemini | gemini-2.0-flash |
-| 通义千问 | qwen-plus |
-| 智谱 GLM | glm-4-flash |
-| Moonshot (Kimi) | moonshot-v1-8k |
-| SiliconFlow | DeepSeek-V3 |
-| 自定义 | 任何 OpenAI 兼容 API |
-
-> 所有 Provider 均通过 OpenAI 兼容接口调用，可在界面内"AI 模型配置"中实时切换。
-
 ## 语音服务
 
 语音面试功能基于**阿里云 DashScope** 的 **Qwen3** 系列语音模型：
