@@ -60,6 +60,15 @@ export function useVoice() {
   }, []);
 
   const playTTS = useCallback(async (text: string, speed?: number) => {
+    // 截断上一段正在播放的音频
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.onended = null;
+      const oldSrc = audioRef.current.src;
+      audioRef.current = null;
+      if (oldSrc) URL.revokeObjectURL(oldSrc);
+    }
+
     setPlaying(true);
     try {
       const buffer = await textToSpeech(text, speed);
@@ -72,6 +81,7 @@ export function useVoice() {
       audio.onended = () => {
         setPlaying(false);
         URL.revokeObjectURL(url);
+        if (audioRef.current === audio) audioRef.current = null;
       };
       audio.play();
     } catch {
