@@ -91,6 +91,13 @@ async def parse_resume(session_id: str):
     if not resume_path:
         raise HTTPException(400, "未找到简历文件，请重新上传")
 
+    llm_config = settings.get_llm_config()
+    if not llm_config["api_key"]:
+        raise HTTPException(
+            400,
+            f"尚未配置 {settings.llm_provider.upper()} 的 API Key，请先在侧边栏「AI 模型配置」中填写",
+        )
+
     async def event_generator():
         yield {"event": "status", "data": json.dumps({"status": "parsing"})}
         try:
@@ -118,6 +125,13 @@ async def select_job(session_id: str, body: SelectJobRequest):
     iface = store.get(session_id)
     if iface is None:
         raise HTTPException(404, "会话不存在")
+
+    llm_config = settings.get_llm_config()
+    if not llm_config["api_key"]:
+        raise HTTPException(
+            400,
+            f"尚未配置 {settings.llm_provider.upper()} 的 API Key，请先在侧边栏「AI 模型配置」中填写",
+        )
 
     async def event_generator():
         yield {"event": "status", "data": json.dumps({"status": "generating"})}

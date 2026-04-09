@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { InterviewSidebar } from "@/components/interview-sidebar";
-import { uploadResume, getResumes, reuseResume } from "@/lib/api";
+import { uploadResume, getResumes, reuseResume, getProviders } from "@/lib/api";
+import { AlertTriangle } from "lucide-react";
 
 interface ResumeItem {
   path: string;
@@ -24,10 +25,19 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const [fileName, setFileName] = useState("");
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
+  const [hasApiKey, setHasApiKey] = useState(true);
+  const [providerName, setProviderName] = useState("");
 
   useEffect(() => {
     getResumes()
       .then((res) => setResumes(res.resumes))
+      .catch(() => {});
+    getProviders()
+      .then((res) => {
+        setHasApiKey(res.has_api_key);
+        const p = res.providers.find((p: { id: string }) => p.id === res.current_provider);
+        setProviderName(p?.name || res.current_provider);
+      })
       .catch(() => {});
   }, []);
 
@@ -91,6 +101,20 @@ export default function HomePage() {
       <main className="flex flex-1 items-center justify-center p-8">
         <Card className="w-full max-w-lg shadow-lg">
           <CardContent className="p-6">
+            {!hasApiKey && (
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-medium text-amber-800 dark:text-amber-200">
+                    未配置 {providerName} API Key
+                  </p>
+                  <p className="mt-0.5 text-amber-700 dark:text-amber-300">
+                    请先点击侧边栏「AI 模型配置」填写 API Key，否则无法解析简历
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Existing resumes */}
             {resumes.length > 0 && (
               <>
