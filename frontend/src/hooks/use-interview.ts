@@ -15,6 +15,7 @@ export function useInterview(sessionId: string) {
   const [currentQuestionNum, setCurrentQuestionNum] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState<QuestionItem | null>(null);
   const initialized = useRef(false);
+  const parseAbortRef = useRef<AbortController | null>(null);
 
   // On mount: check status first, if not parsed yet then trigger parse
   useEffect(() => {
@@ -37,16 +38,13 @@ export function useInterview(sessionId: string) {
           setPhase("interview");
           setLoading(false);
         } else if (status.phase !== "init") {
-          // Resume already parsed, go to job selection
           setPhase("job_select");
           setLoading(false);
         } else {
-          // Not parsed yet — trigger parse via SSE
           triggerParse();
         }
       })
       .catch(() => {
-        // status 404 = fresh session, need to parse
         triggerParse();
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -57,19 +55,35 @@ export function useInterview(sessionId: string) {
     setLoading(true);
     setError("");
 
+    const abortController = new AbortController();
+    parseAbortRef.current = abortController;
+
     api.parseResumeSSE(
       sessionId,
       (g) => {
+        parseAbortRef.current = null;
         setGreeting(g);
         setPhase("job_select");
         setLoading(false);
       },
       (msg) => {
+        parseAbortRef.current = null;
+        if (abortController.signal.aborted) return;
         setError(msg);
         setLoading(false);
-      }
+      },
+      abortController.signal
     );
   }
+
+  const cancelParse = useCallback(() => {
+    if (parseAbortRef.current) {
+      parseAbortRef.current.abort();
+      parseAbortRef.current = null;
+    }
+    setLoading(false);
+    setPhase("upload");
+  }, []);
 
   const selectJob = useCallback(
     async (jobCategory: string, includeCoding: boolean) => {
@@ -160,5 +174,6 @@ export function useInterview(sessionId: string) {
     currentQuestion,
     selectJob,
     submitAnswer,
+    cancelParse,
   };
 }

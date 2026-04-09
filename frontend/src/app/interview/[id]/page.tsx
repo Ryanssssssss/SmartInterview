@@ -19,7 +19,7 @@ import { ChatMessage } from "@/components/chat-message";
 import { CodeEditor } from "@/components/code-editor";
 import { useInterview } from "@/hooks/use-interview";
 import { useVoice } from "@/hooks/use-voice";
-import { getJobCategories, getLeetCodeProblem } from "@/lib/api";
+import { getJobCategories, getLeetCodeProblem, getProviders } from "@/lib/api";
 
 interface LeetCodeProblem {
   id: number;
@@ -46,6 +46,7 @@ export default function InterviewPage() {
     currentQuestion,
     selectJob,
     submitAnswer,
+    cancelParse,
   } = useInterview(id);
   const { recording, transcribing, playing, startRecording, stopRecording, playTTS, stopPlaying } = useVoice();
 
@@ -54,6 +55,7 @@ export default function InterviewPage() {
   const [includeCoding, setIncludeCoding] = useState(true);
   const [interviewMode, setInterviewMode] = useState<"text" | "voice">("text");
   const [voiceSpeed, setVoiceSpeed] = useState(1.25);
+  const [hasVoiceKey, setHasVoiceKey] = useState(true);
   const [input, setInput] = useState("");
   const [leetcodeProblem, setLeetcodeProblem] = useState<LeetCodeProblem | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -65,6 +67,7 @@ export default function InterviewPage() {
       setCategories(res.categories);
       if (res.categories.length > 0) setSelectedJob(res.categories[0]);
     });
+    getProviders().then((res) => setHasVoiceKey(res.has_voice_key)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -126,7 +129,7 @@ export default function InterviewPage() {
   const handleStartInterview = async () => {
     if (interviewMode === "voice") {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         stream.getTracks().forEach((t) => t.stop());
       } catch {
         return;
@@ -218,14 +221,27 @@ export default function InterviewPage() {
         {/* Parsing Resume */}
         {phase === "upload" && (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
-            <div className="text-center">
-              <p className="text-lg font-medium">正在解析简历...</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                AI 正在阅读您的简历，这可能需要 10-30 秒
-              </p>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {loading ? (
+              <>
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                <div className="text-center">
+                  <p className="text-lg font-medium">正在解析简历...</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    AI 正在阅读您的简历，这可能需要 10-30 秒
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={cancelParse}>
+                  取消
+                </Button>
+              </>
+            ) : error ? (
+              <div className="text-center">
+                <p className="text-sm text-destructive">{error}</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => window.location.href = "/"}>
+                  返回首页
+                </Button>
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -279,7 +295,13 @@ export default function InterviewPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setInterviewMode("voice")}
+                      onClick={() => {
+                        if (!hasVoiceKey) {
+                          alert("尚未配置语音 API Key（DashScope），请先在侧边栏「AI 模型配置」中填写");
+                          return;
+                        }
+                        setInterviewMode("voice");
+                      }}
                       className={`flex-1 rounded-lg border-2 px-4 py-3 text-center text-sm transition-colors ${
                         interviewMode === "voice"
                           ? "border-primary bg-primary/5 font-medium text-primary"
@@ -308,7 +330,7 @@ export default function InterviewPage() {
                       className="w-full accent-primary"
                     />
                     <p className="text-xs text-muted-foreground">
-                      语音模式下仍可使用文本输入。点击开始面试时会申请麦克风权限。
+                      语音模式下仍可使用文本输入。点击开始面试时会申请麦克风和摄像头权限。
                     </p>
                   </div>
                 )}

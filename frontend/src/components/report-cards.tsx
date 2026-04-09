@@ -36,12 +36,12 @@ export function DimensionBars({ dimensions }: DimensionBarProps) {
       {Object.entries(dimensions).map(([key, val]) => {
         const score = typeof val === "number" ? val : val.score;
         const comment = typeof val === "object" ? val.comment : undefined;
-        const pct = Math.min(score * 10, 100);
+        const pct = Math.min(Math.max(score, 0), 100);
         return (
           <div key={key}>
             <div className="mb-1.5 flex items-center justify-between text-sm">
               <span className="font-medium">{DIMENSION_NAMES[key] || key}</span>
-              <span className="text-muted-foreground">{score}/10</span>
+              <span className="text-muted-foreground">{score}/100</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
               <div

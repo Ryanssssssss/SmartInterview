@@ -41,10 +41,12 @@ export async function uploadResume(file: File) {
 export async function parseResumeSSE(
   sessionId: string,
   onGreeting: (greeting: string) => void,
-  onError: (msg: string) => void
+  onError: (msg: string) => void,
+  signal?: AbortSignal
 ) {
   const res = await fetch(`${BASE}/api/interview/${sessionId}/parse`, {
     method: "POST",
+    signal,
   });
   if (!res.ok || !res.body) {
     const body = await res.json().catch(() => ({}));
