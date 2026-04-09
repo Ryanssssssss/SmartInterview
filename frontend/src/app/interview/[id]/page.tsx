@@ -48,7 +48,7 @@ export default function InterviewPage() {
     submitAnswer,
     cancelParse,
   } = useInterview(id);
-  const { recording, transcribing, playing, startRecording, stopRecording, playTTS, stopPlaying } = useVoice();
+  const { recording, transcribing, playing, transcript, startRecording, stopRecording, playTTS, stopPlaying } = useVoice();
 
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedJob, setSelectedJob] = useState("");
@@ -64,6 +64,12 @@ export default function InterviewPage() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const prevLeetcodeIdRef = useRef<number | null>(null);
   const prevMsgCountRef = useRef(0);
+
+  useEffect(() => {
+    if (recording && transcript) {
+      setInput(transcript);
+    }
+  }, [recording, transcript]);
 
   useEffect(() => {
     getJobCategories().then((res) => {
@@ -135,11 +141,15 @@ export default function InterviewPage() {
     if (recording) {
       try {
         const text = await stopRecording();
-        if (text) submitAnswer(text);
+        if (text) {
+          setInput(text);
+          submitAnswer(text);
+        }
       } catch { /* ignore */ }
     } else {
       try {
         if (playing) stopPlaying();
+        setInput("");
         await startRecording();
       } catch { /* ignore */ }
     }
@@ -225,7 +235,18 @@ export default function InterviewPage() {
           </Button>
         </div>
         {recording && (
-          <p className="mt-1 text-xs text-destructive animate-pulse">录音中... 点击麦克风按钮停止并发送</p>
+          <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
+              <span className="text-xs font-medium text-muted-foreground">实时识别中</span>
+            </div>
+            {transcript && (
+              <p className="mt-1 text-sm text-foreground">{transcript}</p>
+            )}
+            {!transcript && (
+              <p className="mt-1 text-xs text-muted-foreground/60">开始说话...</p>
+            )}
+          </div>
         )}
         {error && (
           <p className="mt-1 text-sm text-destructive">{error}</p>
