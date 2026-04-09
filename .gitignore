@@ -11,6 +11,10 @@ build/
 .venv/
 venv/
 
+# Node.js
+node_modules/
+.next/
+
 # 运行时数据（不含题库）
 data/chroma_db/
 data/uploads/
