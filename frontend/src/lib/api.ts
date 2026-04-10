@@ -186,6 +186,10 @@ export async function getInterviewStatus(sessionId: string) {
   }>(`/api/interview/${sessionId}/status`);
 }
 
+export async function getResumeParsed(sessionId: string) {
+  return request<Record<string, unknown>>(`/api/interview/${sessionId}/resume`);
+}
+
 export async function getReport(sessionId: string) {
   return request<{ report: Record<string, unknown>; conversation_history: { role: string; content: string }[] }>(
     `/api/interview/${sessionId}/report`

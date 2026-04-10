@@ -1,5 +1,5 @@
 [project]
-name = "smartinterview"
+name = "offerforge"
 version = "1.0.0"
 description = "AI-powered mock interview coach with RAG question bank, LangGraph agent, multi-LLM support, and voice interaction."
 readme = "README.md"

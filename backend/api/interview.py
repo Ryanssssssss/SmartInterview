@@ -226,19 +226,42 @@ async def get_status(session_id: str):
     )
 
 
-@router.get("/interview/{session_id}/report", response_model=ReportResponse)
-async def get_report(session_id: str):
-    """获取面试反馈报告。"""
+@router.get("/interview/{session_id}/resume")
+async def get_resume_parsed(session_id: str):
+    """获取简历结构化解析结果（供前端实体卡片面板使用）。"""
     iface = store.get(session_id)
     if iface is None:
         raise HTTPException(404, "会话不存在")
+    agent_state = store.get_state(session_id)
+    resume_parsed = agent_state.get("resume_parsed", {})
+    return resume_parsed
 
-    if not iface.is_finished:
-        raise HTTPException(400, "面试尚未结束")
 
-    report = iface.get_report()
-    history = iface.get_conversation_history()
-    return ReportResponse(report=report, conversation_history=history)
+@router.get("/interview/{session_id}/report", response_model=ReportResponse)
+async def get_report(session_id: str):
+    """获取面试反馈报告。优先从内存读取，回退到磁盘持久化数据。"""
+    iface = store.get(session_id)
+    if iface is not None:
+        if not iface.is_finished:
+            raise HTTPException(400, "面试尚未结束")
+        return ReportResponse(
+            report=iface.get_report(),
+            conversation_history=iface.get_conversation_history(),
+        )
+
+    from core.session_manager import load_session
+    session_data = load_session(session_id)
+    if session_data is None:
+        raise HTTPException(404, "会话不存在")
+
+    report = session_data.get("report")
+    if not report:
+        raise HTTPException(400, "该会话没有面试报告")
+
+    return ReportResponse(
+        report=report,
+        conversation_history=session_data.get("messages", []),
+    )
 
 
 @router.post("/interview/{session_id}/code/run", response_model=RunCodeResponse)

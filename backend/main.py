@@ -1,4 +1,4 @@
-"""FastAPI 入口 — SmartInterview 后端。"""
+"""FastAPI 入口 — OfferForge 后端。"""
 
 import sys
 from pathlib import Path
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="SmartInterview API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="OfferForge API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

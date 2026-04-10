@@ -67,12 +67,18 @@ export function InterviewSidebar({ phase, progress }: SidebarProps) {
     setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
   };
 
+  const handleClearHistory = async () => {
+    if (!confirm("确定清空所有历史记录？此操作不可撤销。")) return;
+    await Promise.all(sessions.map((s) => deleteSession(s.session_id)));
+    setSessions([]);
+  };
+
   return (
     <aside className="flex h-full w-64 flex-col border-r bg-card">
       <div className="flex items-center gap-2 px-5 py-5">
         <Target className="h-6 w-6 text-primary" />
         <div>
-          <h1 className="text-lg font-semibold">面霸</h1>
+          <h1 className="text-lg font-semibold">OfferForge</h1>
           <p className="text-xs text-muted-foreground">AI 面试教练</p>
         </div>
       </div>
@@ -168,29 +174,47 @@ export function InterviewSidebar({ phase, progress }: SidebarProps) {
               ) : sessions.length === 0 ? (
                 <p className="py-2 text-xs text-muted-foreground">暂无记录</p>
               ) : (
-                sessions.map((s) => (
-                  <Link
-                    key={s.session_id}
-                    href={s.has_report ? `/report/${s.session_id}` : `/interview/${s.session_id}`}
+                <>
+                  {sessions.map((s) =>
+                    s.has_report ? (
+                      <Link key={s.session_id} href={`/report/${s.session_id}`}>
+                        <div className="group flex items-center gap-1.5 rounded px-2 py-1.5 text-xs hover:bg-accent">
+                          <CheckCircle className="h-3 w-3 shrink-0 text-green-500" />
+                          <span className="flex-1 truncate">
+                            {s.candidate_name || "未知"}{s.job_category ? ` · ${s.job_category}` : ""}
+                          </span>
+                          <button
+                            onClick={(e) => handleDeleteSession(s.session_id, e)}
+                            className="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:block"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </Link>
+                    ) : (
+                      <div key={s.session_id} className="group flex items-center gap-1.5 rounded px-2 py-1.5 text-xs">
+                        <Clock className="h-3 w-3 shrink-0 text-muted-foreground/40" />
+                        <span className="flex-1 truncate text-muted-foreground/50">
+                          {s.candidate_name || "未知"}{s.job_category ? ` · ${s.job_category}` : ""}
+                          <span className="ml-1 text-[10px]">(未完成)</span>
+                        </span>
+                        <button
+                          onClick={(e) => handleDeleteSession(s.session_id, e)}
+                          className="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:block"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )
+                  )}
+                  <button
+                    onClick={handleClearHistory}
+                    className="mt-2 flex w-full items-center justify-center gap-1 rounded py-1.5 text-[11px] text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"
                   >
-                    <div className="group flex items-center gap-1.5 rounded px-2 py-1.5 text-xs hover:bg-accent">
-                      {s.has_report ? (
-                        <CheckCircle className="h-3 w-3 shrink-0 text-green-500" />
-                      ) : (
-                        <Clock className="h-3 w-3 shrink-0 text-amber-500" />
-                      )}
-                      <span className="flex-1 truncate">
-                        {s.candidate_name || "未知"}{s.job_category ? ` · ${s.job_category}` : ""}
-                      </span>
-                      <button
-                        onClick={(e) => handleDeleteSession(s.session_id, e)}
-                        className="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:block"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </Link>
-                ))
+                    <Trash2 className="h-3 w-3" />
+                    清空历史
+                  </button>
+                </>
               )}
             </div>
           )}

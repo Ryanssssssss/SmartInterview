@@ -1,4 +1,4 @@
-# 面霸 — AI 简历面试教练
+# OfferForge — AI 简历面试教练
 
 基于 **RAG + LangGraph Agent + 多模态语音** 的智能面试模拟系统。上传简历，AI 面试官根据你的真实项目经历进行个性化提问、追问和评分。
 
@@ -127,7 +127,7 @@ cd frontend; npm run dev
 ## 项目结构
 
 ```
-SmartInterview/
+OfferForge/
 ├── backend/                        # FastAPI 后端 API 层
 │   ├── main.py                     # FastAPI 入口, CORS, 路由挂载
 │   ├── schemas.py                  # Pydantic request/response 模型

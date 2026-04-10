@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "面霸 — AI 面试教练",
+  title: "OfferForge — AI 面试教练",
   description: "上传简历，AI 模拟真实面试，获取专业反馈",
 };
 

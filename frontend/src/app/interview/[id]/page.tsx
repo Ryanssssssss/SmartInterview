@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Loader2, Mic, MicOff, ChevronDown } from "lucide-react";
+import { Send, Loader2, Mic, MicOff, ChevronDown, FileUser, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -17,9 +17,10 @@ import { Label } from "@/components/ui/label";
 import { InterviewSidebar } from "@/components/interview-sidebar";
 import { ChatMessage } from "@/components/chat-message";
 import { CodeEditor } from "@/components/code-editor";
+import { ResumePanel, type ResumeData } from "@/components/resume-panel";
 import { useInterview } from "@/hooks/use-interview";
 import { useVoice } from "@/hooks/use-voice";
-import { getJobCategories, getLeetCodeProblem, getProviders } from "@/lib/api";
+import { getJobCategories, getLeetCodeProblem, getProviders, getResumeParsed } from "@/lib/api";
 
 interface LeetCodeProblem {
   id: number;
@@ -59,6 +60,10 @@ export default function InterviewPage() {
   const [input, setInput] = useState("");
   const [leetcodeProblem, setLeetcodeProblem] = useState<LeetCodeProblem | null>(null);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [resumeData, setResumeData] = useState<ResumeData | null>(null);
+  const [resumePanelOpen, setResumePanelOpen] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(420);
+  const isDraggingRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -84,6 +89,12 @@ export default function InterviewPage() {
   }, [messages]);
 
   useEffect(() => {
+    if (phase === "interview" && !resumeData) {
+      getResumeParsed(id).then((data) => setResumeData(data as ResumeData)).catch(() => {});
+    }
+  }, [phase, id, resumeData]);
+
+  useEffect(() => {
     if (isFinished) router.push(`/report/${id}`);
   }, [isFinished, id, router]);
 
@@ -98,6 +109,33 @@ export default function InterviewPage() {
       setLeetcodeProblem(null);
     }
   }, [currentQuestion]);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const delta = startX - ev.clientX;
+      const newWidth = Math.min(Math.max(startWidth + delta, 280), 700);
+      setPanelWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isDraggingRef.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [panelWidth]);
 
   // Attach camera stream to video element (only when stream changes)
   const attachCamera = useCallback((el: HTMLVideoElement | null) => {
@@ -176,7 +214,7 @@ export default function InterviewPage() {
 
   // Shared chat input bar (used in both chat mode and code mode)
   const chatInputBar = (
-    <div className="border-t bg-card px-4 py-3">
+    <div className="px-4 py-3">
       <div className="mx-auto max-w-3xl">
         {/* Speed control (voice mode) */}
         {interviewMode === "voice" && (
@@ -193,28 +231,17 @@ export default function InterviewPage() {
             />
           </div>
         )}
-        <div className="flex gap-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="输入你的回答或解题思路..."
-            className="min-h-[40px] resize-none text-sm"
-            rows={1}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-          />
+        <div className="flex items-center gap-2 rounded-full border bg-card px-4 py-1.5 shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
           {interviewMode === "voice" && (
-            <Button
-              variant={recording ? "destructive" : "outline"}
-              size="icon"
+            <button
               onClick={handleVoiceToggle}
               disabled={loading || transcribing}
-              className="shrink-0"
               title={recording ? "停止录音并发送" : "语音输入"}
+              className={`shrink-0 rounded-full p-1.5 transition-colors ${
+                recording
+                  ? "bg-destructive text-destructive-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
             >
               {transcribing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -223,16 +250,28 @@ export default function InterviewPage() {
               ) : (
                 <Mic className="h-4 w-4" />
               )}
-            </Button>
+            </button>
           )}
-          <Button
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="输入你的回答或解题思路..."
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+          />
+          <button
             onClick={handleSend}
             disabled={loading || !input.trim()}
-            size="icon"
-            className="shrink-0"
+            className="shrink-0 rounded-full bg-primary p-1.5 text-primary-foreground transition-opacity disabled:opacity-30"
           >
             <Send className="h-4 w-4" />
-          </Button>
+          </button>
         </div>
         {recording && (
           <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
@@ -397,68 +436,138 @@ export default function InterviewPage() {
 
         {/* Chat Mode (no coding question) */}
         {phase === "interview" && !isCoding && (
-          <div className="relative flex flex-1 flex-col overflow-hidden">
-            {/* Camera preview — fixed top-right, picture-in-picture style */}
-            {interviewMode === "voice" && cameraStreamRef.current && (
-              <div className="absolute right-4 top-4 z-10">
-                <video
-                  ref={attachCamera}
-                  autoPlay
-                  muted
-                  playsInline
-                  className="h-32 w-44 rounded-2xl border border-white/20 bg-black object-cover shadow-2xl ring-1 ring-black/5"
-                />
+          <div className="relative flex flex-1 overflow-hidden">
+            {/* Main chat area */}
+            <div className="flex flex-1 flex-col overflow-hidden">
+              {/* Camera preview — fixed top-right, picture-in-picture style */}
+              {interviewMode === "voice" && cameraStreamRef.current && (
+                <div className="absolute right-4 top-4 z-10">
+                  <video
+                    ref={attachCamera}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="h-32 w-44 rounded-2xl border border-white/20 bg-black object-cover shadow-2xl ring-1 ring-black/5"
+                  />
+                </div>
+              )}
+
+              {/* Resume panel toggle + current entity indicator */}
+              <div className="flex h-11 items-center gap-2 border-b px-4">
+                <button
+                  onClick={() => setResumePanelOpen(!resumePanelOpen)}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-all ${
+                    resumePanelOpen
+                      ? "border-primary bg-primary text-primary-foreground shadow-primary/20"
+                      : "border-border bg-card text-foreground hover:border-primary/40 hover:shadow-md"
+                  }`}
+                >
+                  <FileUser className="h-4 w-4" />
+                  简历概览
+                </button>
+                {currentQuestion?.related_resume_point && (
+                  <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                    {currentQuestion.related_resume_point}
+                  </span>
+                )}
               </div>
-            )}
 
-            <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
-              <div className="mx-auto max-w-2xl space-y-4">
-                {/* Collapsible history */}
-                {messages.length > 2 && (
-                  <>
-                    <button
-                      onClick={() => setHistoryExpanded(!historyExpanded)}
-                      className="group flex w-full items-center gap-3 py-1"
-                    >
-                      <div className="h-px flex-1 bg-gradient-to-r from-transparent to-border" />
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground/70 transition-colors group-hover:text-muted-foreground">
-                        <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${historyExpanded ? "rotate-180" : ""}`} />
-                        {historyExpanded ? "收起" : `${messages.length - 2} 条历史`}
-                      </span>
-                      <div className="h-px flex-1 bg-gradient-to-l from-transparent to-border" />
-                    </button>
+              <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
+                <div className="mx-auto max-w-2xl space-y-4">
+                  {/* Collapsible history */}
+                  {messages.length > 2 && (
+                    <>
+                      <button
+                        onClick={() => setHistoryExpanded(!historyExpanded)}
+                        className="group flex w-full items-center gap-3 py-1"
+                      >
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent to-border" />
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground/70 transition-colors group-hover:text-muted-foreground">
+                          <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${historyExpanded ? "rotate-180" : ""}`} />
+                          {historyExpanded ? "收起" : `${messages.length - 2} 条历史`}
+                        </span>
+                        <div className="h-px flex-1 bg-gradient-to-l from-transparent to-border" />
+                      </button>
 
-                    {historyExpanded && (
-                      <div className="space-y-3">
-                        {messages.slice(0, -2).map((msg, i) => (
-                          <div key={i} className="opacity-40 transition-opacity hover:opacity-70">
-                            <ChatMessage role={msg.role} content={msg.content} />
+                      {historyExpanded && (
+                        <div className="space-y-3">
+                          {messages.slice(0, -2).map((msg, i) => (
+                            <div key={i} className="opacity-40 transition-opacity hover:opacity-70">
+                              <ChatMessage role={msg.role} content={msg.content} />
+                            </div>
+                          ))}
+                          <div className="flex items-center gap-3 py-1">
+                            <div className="h-px flex-1 bg-gradient-to-r from-transparent to-border/50" />
+                            <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">当前</span>
+                            <div className="h-px flex-1 bg-gradient-to-l from-transparent to-border/50" />
                           </div>
-                        ))}
-                        <div className="flex items-center gap-3 py-1">
-                          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-border/50" />
-                          <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">当前</span>
-                          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-border/50" />
                         </div>
-                      </div>
-                    )}
-                  </>
-                )}
+                      )}
+                    </>
+                  )}
 
-                {/* Latest round — always visible, full opacity */}
-                {messages.slice(-2).map((msg, i) => (
-                  <ChatMessage key={`latest-${i}`} role={msg.role} content={msg.content} />
-                ))}
+                  {/* Latest round — always visible, full opacity */}
+                  {messages.slice(-2).map((msg, i) => (
+                    <ChatMessage key={`latest-${i}`} role={msg.role} content={msg.content} />
+                  ))}
 
-                {loading && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    面试官思考中...
-                  </div>
-                )}
+                  {loading && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      面试官思考中...
+                    </div>
+                  )}
+                </div>
               </div>
+              {chatInputBar}
             </div>
-            {chatInputBar}
+
+            {/* Resume panel — raised card style, resizable */}
+            <div
+              className={`relative flex-shrink-0 ${
+                resumePanelOpen ? "" : "w-0 overflow-hidden"
+              }`}
+              style={resumePanelOpen ? { width: panelWidth } : undefined}
+            >
+              {resumePanelOpen && (
+                <>
+                  {/* Drag handle — floats outside the panel */}
+                  <div
+                    onMouseDown={handleResizeStart}
+                    className="group absolute -left-4 top-1/2 z-30 flex h-10 w-4 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-l-md border border-r-0 border-border/60 bg-muted shadow-sm hover:bg-muted-foreground/15 active:bg-primary/20"
+                  >
+                    <span className="text-[10px] font-bold leading-none text-muted-foreground/50 group-hover:text-muted-foreground group-active:text-primary">»</span>
+                  </div>
+
+                  <div className="flex h-full flex-col rounded-l-2xl border border-r-0 border-border/40 bg-card shadow-[-4px_0_16px_rgba(0,0,0,0.06)]">
+                    {/* Header */}
+                    <div className="flex h-11 items-center gap-2 border-b px-4">
+                      <FileUser className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">简历概览</span>
+                      <button
+                        onClick={() => setResumePanelOpen(false)}
+                        className="ml-auto rounded-md p-0.5 text-muted-foreground/50 hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto px-3 py-4">
+                      {resumeData ? (
+                        <ResumePanel
+                          data={resumeData}
+                          activeEntity={currentQuestion?.related_resume_point || ""}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
 
