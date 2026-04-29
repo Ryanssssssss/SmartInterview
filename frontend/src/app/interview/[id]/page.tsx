@@ -49,7 +49,7 @@ export default function InterviewPage() {
     submitAnswer,
     cancelParse,
   } = useInterview(id);
-  const { recording, transcribing, playing, transcript, startRecording, stopRecording, playTTS, stopPlaying } = useVoice();
+  const { recording, transcribing, playing, transcript, startRecording, stopRecording, playTTS, playTTSStream, stopPlaying } = useVoice();
 
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedJob, setSelectedJob] = useState("");
@@ -57,6 +57,7 @@ export default function InterviewPage() {
   const [interviewMode, setInterviewMode] = useState<"text" | "voice">("text");
   const [voiceSpeed, setVoiceSpeed] = useState(1.25);
   const [hasVoiceKey, setHasVoiceKey] = useState(true);
+  const [customTtsUrl, setCustomTtsUrl] = useState("");
   const [input, setInput] = useState("");
   const [leetcodeProblem, setLeetcodeProblem] = useState<LeetCodeProblem | null>(null);
   const [historyExpanded, setHistoryExpanded] = useState(false);
@@ -81,7 +82,10 @@ export default function InterviewPage() {
       setCategories(res.categories);
       if (res.categories.length > 0) setSelectedJob(res.categories[0]);
     });
-    getProviders().then((res) => setHasVoiceKey(res.has_voice_key)).catch(() => {});
+    getProviders().then((res) => {
+      setHasVoiceKey(res.has_voice_key);
+      setCustomTtsUrl(res.custom_tts_url || "");
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -153,24 +157,26 @@ export default function InterviewPage() {
     };
   }, []);
 
+  const lastTtsContentRef = useRef("");
+
   // Auto-play TTS for new interviewer messages in voice mode
   useEffect(() => {
     if (interviewMode !== "voice" || messages.length === 0) return;
-    if (messages.length <= prevMsgCountRef.current) {
-      prevMsgCountRef.current = messages.length;
-      return;
-    }
-    prevMsgCountRef.current = messages.length;
     const last = messages[messages.length - 1];
-    if (last.role === "interviewer") {
-      playTTS(last.content, voiceSpeed);
-    }
+    if (last.role !== "interviewer") return;
+    // 用内容去重，避免重复播放同一条消息
+    if (last.content === lastTtsContentRef.current) return;
+    lastTtsContentRef.current = last.content;
+
+    stopPlaying();
+    playTTS(last.content, voiceSpeed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, interviewMode]);
 
   const handleSend = () => {
     const text = input.trim();
     if (!text || loading) return;
+    if (recording) stopRecording().catch(() => {});
     setInput("");
     submitAnswer(text);
   };
@@ -195,16 +201,15 @@ export default function InterviewPage() {
 
   const handleStartInterview = async () => {
     if (interviewMode === "voice") {
+      // 摄像头可选，拒绝不影响面试；麦克风在录音时再获取
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        // Keep video stream for camera preview, stop audio tracks (re-acquired on recording)
-        stream.getAudioTracks().forEach((t) => t.stop());
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         cameraStreamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
       } catch {
-        return;
+        // 摄像头权限被拒绝，跳过画面预览，继续面试
       }
     }
     selectJob(selectedJob, includeCoding);
@@ -231,60 +236,72 @@ export default function InterviewPage() {
             />
           </div>
         )}
-        <div className="flex items-center gap-2 rounded-full border bg-card px-4 py-1.5 shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
-          {interviewMode === "voice" && (
-            <button
-              onClick={handleVoiceToggle}
-              disabled={loading || transcribing}
-              title={recording ? "停止录音并发送" : "语音输入"}
-              className={`shrink-0 rounded-full p-1.5 transition-colors ${
-                recording
-                  ? "bg-destructive text-destructive-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              {transcribing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : recording ? (
-                <MicOff className="h-4 w-4" />
-              ) : (
-                <Mic className="h-4 w-4" />
-              )}
-            </button>
-          )}
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="输入你的回答或解题思路..."
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-          />
+        {recording ? (
+          /* ── 录音中：波浪动画 + 识别文字 + 点击停止发送 ── */
           <button
-            onClick={handleSend}
-            disabled={loading || !input.trim()}
-            className="shrink-0 rounded-full bg-primary p-1.5 text-primary-foreground transition-opacity disabled:opacity-30"
+            onClick={handleVoiceToggle}
+            className="flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-destructive/30 bg-destructive/5 px-4 py-3 transition-colors hover:bg-destructive/10"
           >
-            <Send className="h-4 w-4" />
-          </button>
-        </div>
-        {recording && (
-          <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
-              <span className="text-xs font-medium text-muted-foreground">实时识别中</span>
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-3 w-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75" />
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-destructive" />
+              </span>
+              {/* 波浪动画 */}
+              <div className="flex items-center gap-0.5">
+                {[...Array(5)].map((_, i) => (
+                  <span
+                    key={i}
+                    className="w-1 rounded-full bg-destructive"
+                    style={{
+                      height: `${12 + Math.sin(Date.now() / 200 + i) * 8}px`,
+                      animation: `wave 0.8s ease-in-out ${i * 0.1}s infinite alternate`,
+                    }}
+                  />
+                ))}
+              </div>
+              <span className="text-sm font-medium text-destructive">录音中 · 点击发送</span>
             </div>
             {transcript && (
-              <p className="mt-1 text-sm text-foreground">{transcript}</p>
+              <p className="text-sm text-foreground/80">{transcript}</p>
             )}
             {!transcript && (
-              <p className="mt-1 text-xs text-muted-foreground/60">开始说话...</p>
+              <p className="text-xs text-muted-foreground/60">开始说话...</p>
             )}
+          </button>
+        ) : (
+          /* ── 正常输入栏 ── */
+          <div className="flex items-center gap-2 rounded-full border bg-card px-4 py-1.5 shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
+            {interviewMode === "voice" && (
+              <button
+                onClick={handleVoiceToggle}
+                disabled={loading}
+                title="语音输入"
+                className="shrink-0 rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+            )}
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="输入你的回答或解题思路..."
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+            />
+            <button
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              className="shrink-0 rounded-full bg-primary p-1.5 text-primary-foreground transition-opacity disabled:opacity-30"
+            >
+              <Send className="h-4 w-4" />
+            </button>
           </div>
         )}
         {error && (
@@ -380,8 +397,8 @@ export default function InterviewPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (!hasVoiceKey) {
-                          alert("尚未配置语音 API Key（DashScope），请先在侧边栏「模型配置」中填写");
+                        if (!hasVoiceKey && !customTtsUrl) {
+                          alert("尚未配置语音服务，请先在侧边栏「模型配置」中配置 DashScope API Key 或自定义 TTS 地址");
                           return;
                         }
                         setInterviewMode("voice");

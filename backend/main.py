@@ -20,6 +20,22 @@ from backend.api.sessions import router as sessions_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cleanup_expired()
+
+    # 预加载 Embedding 模型 + 真题库向量化，避免首次出题时卡住
+    import asyncio
+
+    async def _preload():
+        from core.rag.question_bank_rag import _get_model, _get_embeddings, _load_question_bank
+        import logging
+        logger = logging.getLogger("startup")
+        logger.info("预加载真题库 Embedding 模型...")
+        await asyncio.to_thread(_get_model)
+        await asyncio.to_thread(_load_question_bank)
+        await asyncio.to_thread(_get_embeddings)
+        logger.info("真题库预加载完成")
+
+    asyncio.create_task(_preload())
+
     yield
 
 

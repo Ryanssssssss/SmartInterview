@@ -101,9 +101,11 @@ async def parse_resume(session_id: str):
     async def event_generator():
         yield {"event": "status", "data": json.dumps({"status": "parsing"})}
         try:
-            text, _audio = await asyncio.to_thread(
-                iface.start_interview, resume_path, session_id
-            )
+            text_iface = iface.text_interface if hasattr(iface, 'text_interface') else iface
+            if hasattr(text_iface, 'start_interview'):
+                text = await asyncio.to_thread(text_iface.start_interview, resume_path, session_id)
+            else:
+                text, _ = await asyncio.to_thread(iface.start_interview, resume_path, session_id)
             store.persist(session_id)
             yield {
                 "event": "done",
@@ -137,9 +139,11 @@ async def select_job(session_id: str, body: SelectJobRequest):
     async def event_generator():
         yield {"event": "status", "data": json.dumps({"status": "generating"})}
         try:
-            text, _audio = await asyncio.to_thread(
-                iface.select_job, body.job_category, body.include_coding
-            )
+            text_iface = iface.text_interface if hasattr(iface, 'text_interface') else iface
+            if hasattr(text_iface, 'select_job'):
+                text = await asyncio.to_thread(text_iface.select_job, body.job_category, body.include_coding)
+            else:
+                text, _ = await asyncio.to_thread(iface.select_job, body.job_category, body.include_coding)
             agent_state = store.get_state(session_id)
             questions_count = len(agent_state.get("questions", []))
             store.persist(session_id)
@@ -171,9 +175,13 @@ async def submit_answer(session_id: str, body: SubmitAnswerRequest):
         yield {"event": "status", "data": json.dumps({"status": "processing"})}
 
         try:
-            response, audio_out = await asyncio.to_thread(
-                iface.process_text_input, body.answer
-            )
+            # 只调文本接口，不在后端做 TTS（前端会根据模式自行调用流式 TTS）
+            text_iface = iface.text_interface if hasattr(iface, 'text_interface') else iface
+            if hasattr(text_iface, 'send_message'):
+                response = await asyncio.to_thread(text_iface.send_message, body.answer)
+            else:
+                response, _ = await asyncio.to_thread(iface.process_text_input, body.answer)
+            audio_out = b""
 
             agent_state = store.get_state(session_id)
             current_idx = agent_state.get("current_question_idx", 0)

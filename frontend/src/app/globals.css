@@ -128,3 +128,8 @@
     @apply font-sans;
   }
 }
+
+@keyframes wave {
+  0% { height: 6px; }
+  100% { height: 20px; }
+}

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import threading
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
@@ -33,6 +34,73 @@ async def text_to_speech(body: TTSRequest):
         raise HTTPException(500, "语音合成失败")
 
     return Response(content=audio_bytes, media_type="audio/wav")
+
+
+@router.post("/tts/stream")
+async def text_to_speech_stream(body: TTSRequest):
+    """流式 TTS：通过 SSE 逐 chunk 推送 PCM 音频（base64 float32）。
+
+    前端用 AudioContext 解码播放，实现边生成边播放。
+    仅在 custom_tts_url 配置了远程推理服务时可用。
+
+    SSE 事件格式：
+      event: chunk   data: {"pcm_b64": "...", "sample_rate": 24000}
+      event: done    data: {"stats": {...}}
+      event: error   data: {"message": "..."}
+    """
+    from interfaces.voice_interface import CustomTTS
+
+    if not CustomTTS.is_available():
+        raise HTTPException(503, "流式 TTS 需要配置自定义 TTS 推理服务地址")
+
+    tts = CustomTTS()
+    chunk_queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_event_loop()
+
+    def _stream_worker():
+        """在后台线程中运行同步生成器，把 chunk 推入 asyncio queue。"""
+        try:
+            for item in tts.synthesize_stream(body.text):
+                loop.call_soon_threadsafe(chunk_queue.put_nowait, item)
+        except Exception as e:
+            loop.call_soon_threadsafe(chunk_queue.put_nowait, {"error": str(e), "done": True})
+
+    # 启动后台线程
+    threading.Thread(target=_stream_worker, daemon=True).start()
+
+    async def event_generator():
+        while True:
+            item = await chunk_queue.get()
+
+            if item.get("error"):
+                yield {"event": "error", "data": json.dumps({"message": item["error"]})}
+                return
+
+            if item.get("done"):
+                yield {"event": "done", "data": json.dumps({"stats": item.get("stats")})}
+                return
+
+            yield {
+                "event": "chunk",
+                "data": json.dumps({
+                    "pcm_b64": item["pcm_b64"],
+                    "sample_rate": item["sample_rate"],
+                }),
+            }
+
+    from sse_starlette.sse import EventSourceResponse
+    return EventSourceResponse(event_generator())
+
+
+def _collect_stream(tts, text: str) -> list[dict]:
+    """在线程中同步收集所有 stream chunk，返回列表供异步生成器消费。"""
+    results = []
+    try:
+        for item in tts.synthesize_stream(text):
+            results.append(item)
+    except Exception as e:
+        results.append({"error": str(e)})
+    return results
 
 
 @router.post("/stt", response_model=STTResponse)

@@ -227,6 +227,7 @@ export async function getProviders() {
     current_model: string | null;
     has_api_key: boolean;
     has_voice_key: boolean;
+    custom_tts_url: string;
   }>("/api/interview/config/providers");
 }
 
@@ -235,6 +236,7 @@ export async function updateConfig(config: {
   model?: string;
   api_key?: string;
   voice_api_key?: string;
+  custom_tts_url?: string;
 }) {
   return request<{ ok: boolean }>("/api/interview/config", {
     method: "PUT",
@@ -276,4 +278,70 @@ export async function textToSpeech(text: string, speed?: number): Promise<ArrayB
   });
   if (!res.ok) throw new Error("语音合成失败");
   return res.arrayBuffer();
+}
+
+/**
+ * 流式 TTS：通过 SSE 接收 PCM chunk，每收到一个 chunk 就回调。
+ * PCM 格式：float32, mono, sample_rate 由服务端返回（通常 24000）。
+ */
+export async function streamTTS(
+  text: string,
+  onChunk: (pcmFloat32: Float32Array, sampleRate: number) => void,
+  onDone?: (stats: Record<string, unknown> | null) => void,
+  onError?: (msg: string) => void,
+): Promise<void> {
+  // 直接请求后端，绕过 Next.js rewrite 代理（代理会缓冲 SSE 流导致 chunk 丢失）
+  const backendUrl = "http://localhost:8000";
+  const res = await fetch(`${backendUrl}/api/voice/tts/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    onError?.(body.detail || "流式 TTS 请求失败");
+    return;
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) { onError?.("无法读取流"); return; }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    let eventType = "";
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventType = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        const dataStr = line.slice(5).trim();
+        if (!dataStr) continue;
+        try {
+          const data = JSON.parse(dataStr);
+          if (eventType === "chunk" && data.pcm_b64) {
+            // base64 → ArrayBuffer → Float32Array
+            const binaryStr = atob(data.pcm_b64);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+            const float32 = new Float32Array(bytes.buffer);
+            onChunk(float32, data.sample_rate || 24000);
+          } else if (eventType === "done") {
+            onDone?.(data.stats || null);
+          } else if (eventType === "error") {
+            onError?.(data.message || "流式 TTS 错误");
+          }
+        } catch { /* skip malformed */ }
+        eventType = "";
+      }
+    }
+  }
 }

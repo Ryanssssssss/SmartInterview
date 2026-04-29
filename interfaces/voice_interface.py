@@ -170,10 +170,9 @@ class QwenTTS:
 class CustomTTS:
     """调用自部署的 Qwen3-TTS 推理服务（远程 IP:端口）。
 
-    接口约定（Qwen3-TTS 标准部署格式）：
-        POST {base_url}/tts
-        Body: {"text": "...", "language": "zh", "stream": false}
-        Response: {"audio_data": "<base64 wav>"}
+    适配接口（49-TTS-LOL-yummi-Server.py）：
+        GET {base_url}/tts?text=...&language=Chinese
+        Response: audio/wav 二进制流
     """
 
     def __init__(self, base_url: str | None = None):
@@ -195,31 +194,41 @@ class CustomTTS:
             logger.error("requests 库未安装")
             return b""
 
-        payload = {
+        params = {
             "text": text,
-            "language": "zh",
-            "stream": False,
+            "language": "Chinese",
+            "instruct": "语气专业干练，像资深面试官一样沉稳有力。",
         }
 
         try:
-            resp = _req.post(
+            resp = _req.get(
                 f"{self._base_url}/tts",
-                json=payload,
-                timeout=60,
+                params=params,
+                timeout=120,
             )
             resp.raise_for_status()
 
-            data = resp.json()
-            audio_b64 = data.get("audio_data", "")
-            if audio_b64:
-                return base64.b64decode(audio_b64)
-
-            # 如果响应直接是二进制音频（某些部署方式）
             content_type = resp.headers.get("content-type", "")
+
+            # 情况1：直接返回 WAV 二进制（你的服务走这条路径）
             if "audio" in content_type or "octet-stream" in content_type:
+                logger.info("自定义 TTS 合成成功: %d bytes", len(resp.content))
                 return resp.content
 
-            logger.warning("自定义 TTS 响应中无 audio_data 字段")
+            # 情况2：JSON 包裹 base64（兼容其他部署方式）
+            try:
+                data = resp.json()
+                audio_b64 = data.get("audio_data", "")
+                if audio_b64:
+                    return base64.b64decode(audio_b64)
+            except Exception:
+                pass
+
+            # 情况3：响应体本身就是音频（无 content-type 标记）
+            if len(resp.content) > 1000:
+                return resp.content
+
+            logger.warning("自定义 TTS 响应无法识别")
             return b""
 
         except Exception as e:
@@ -230,6 +239,81 @@ class CustomTTS:
     def is_available() -> bool:
         """检查自定义 TTS 是否可用。"""
         return bool(settings.custom_tts_url)
+
+    def synthesize_stream(self, text: str, **kwargs):
+        """流式合成：调用 /start 启动任务，/poll 逐步拉取 PCM chunk。
+
+        Yields:
+            dict: {"pcm_b64": str, "sample_rate": int, "done": bool, "stats": dict|None}
+        """
+        if not self._base_url:
+            return
+
+        try:
+            import requests as _req
+        except ImportError:
+            return
+
+        params = {
+            "text": text,
+            "language": "Chinese",
+            "instruct": "语气专业干练，像资深面试官一样沉稳有力。",
+        }
+
+        try:
+            # 1. 启动流式任务
+            resp = _req.get(f"{self._base_url}/start", params=params, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            task_id = data.get("task_id")
+            sample_rate = data.get("sample_rate", 24000)
+            if not task_id:
+                logger.error("流式 TTS /start 未返回 task_id")
+                return
+
+            logger.info("流式 TTS 任务启动: task_id=%s", task_id)
+
+            # 2. 轮询 /poll 获取 chunk
+            offset = 0
+            while True:
+                poll_resp = _req.get(
+                    f"{self._base_url}/poll",
+                    params={"task_id": task_id, "offset": offset},
+                    timeout=30,
+                )
+                poll_resp.raise_for_status()
+                poll_data = poll_resp.json()
+
+                chunks = poll_data.get("chunks", [])
+                new_offset = poll_data.get("offset", offset)
+                done = poll_data.get("done", False)
+                stats = poll_data.get("stats")
+
+                for chunk_b64 in chunks:
+                    yield {
+                        "pcm_b64": chunk_b64,
+                        "sample_rate": sample_rate,
+                        "done": False,
+                        "stats": None,
+                    }
+
+                offset = new_offset
+
+                if done:
+                    yield {
+                        "pcm_b64": "",
+                        "sample_rate": sample_rate,
+                        "done": True,
+                        "stats": stats,
+                    }
+                    break
+
+                # 避免过快轮询
+                import time
+                time.sleep(0.02)
+
+        except Exception as e:
+            logger.error("流式 TTS 失败 (%s): %s", self._base_url, e)
 
 
 class QwenSTT:
